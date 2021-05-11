@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+ name: simple-soe-ingress
+ annotations:
+   kubernetes.io/ingress.class: "public-iks-k8s-nginx"
+spec:
+ tls:
+ - hosts:
+   - simple-soe-cluster-074b55ec662880a9b91b986213323a0b-0000.us-east.containers.appdomain.cloud
+   secretName: simple-soe-cluster-074b55ec662880a9b91b986213323a0b-0000
+ rules:
+ - host: simple-soe-cluster-074b55ec662880a9b91b986213323a0b-0000.us-east.containers.appdomain.cloud
+   http:
+     paths:
+     - path: /
+       pathType: Prefix
+       backend:
+         service:
+           name: simple-soe-service
+           port:
+             number: 5040
