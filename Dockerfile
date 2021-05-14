@@ -3,6 +3,7 @@ FROM python:3.9.4-slim
 RUN pip install --upgrade pip
 RUN pip install requests
 RUN pip install Flask
+RUN pip install pyjwt
 
 # Set the working directory to /app
 WORKDIR /app

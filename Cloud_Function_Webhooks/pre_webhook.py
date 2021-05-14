@@ -1,57 +1,40 @@
 import json
 import traceback
-import random
+import re
+import jwt
 
-insulting_names = ['Fart face', 'Dick nose', 'Butt head', 'Dumb ass', 'Bone head',
-                   'Dip shit', 'Shit head']
-
-def get_insulting_name():
-    choice = int(random.random() * len(insulting_names))
-    return insulting_names[choice]
-
-def addLogEntry(comment, message=None):
+def add_log_entry(comment, message=None):
     if message is None:
         print(comment)
     else:
-        logmessage = json.dumps(message, separators=(',', ':'))
-        print(comment + " " + logmessage)
+        log_message = json.dumps(message)
+        print(comment + " " + log_message)
 
-def set_response_text(message, list_of_texts):
-    if message.get('output') is not None:
-        message['output']['text'] = []
-        message['output']['generic'] = []
-        for text in list_of_texts:
-            message['output']['text'].append(text)
-            message['output']['generic'].append({'response_type': 'text', 'text': text})
-    return message
-
-
-def add_response_text(message, list_of_texts):
-    if message.get('output') is not None:
-        if message['output'].get('text') is not None and message['output'].get('generic') is not None:
-            for text in list_of_texts:
-                message['output']['text'].append(text)
-                message['output']['generic'].append({'response_type': 'text', 'text': text})
-    return message
+def redact_input(text):
+    redacted_text = re.sub(r'\d', '1', text)
+    return redacted_text
 
 def pre_process_v2(message):
     input = message['payload'].get('input')
     if input is not None:
-        insult = get_insulting_name()
-        input['text'] = 'Yo %s, %s.' % (insult, input['text'])
+        redacted_text = redact_input(input['text'])
+        input['text'] = redacted_text
+    return message
 
 def main(request_input):
-    addLogEntry('>>>>>>> Assistant pre-webhook invoked')
-    addLogEntry(request_input)
+    add_log_entry('>>>>>>> Assistant pre-webhook invoked')
+    add_log_entry(request_input)
     try:
-        resp_data = pre_process_v2(request_input)
+        auth = request_input['__ow_headers'].get('authorization')
+        if auth is not None:
+            jwt.decode(auth, 'webhook', algorithms=["HS256"])
+        msg = pre_process_v2(request_input)
+        resp = {"body": msg}
     except Exception as e:
-        addLogEntry('>>>>>>> Error: ' + str(e))
-        addLogEntry(traceback.format_exc())
-        addLogEntry('Error Return to Gateway', request_input)
-        set_response_text(request_input, ['Dang it!', 'Cloud Functions suck!'])
-    resp = {"body": request_input}
-    addLogEntry(resp)
+        add_log_entry('>>>>>>> Error: ' + str(e))
+        add_log_entry(traceback.format_exc())
+        resp = {"statusCode": 500, "body": str(e)}
+    add_log_entry(resp)
     return resp
 
 if __name__ == '__main__':
