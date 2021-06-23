@@ -1,16 +1,15 @@
-# simple-soe for Voice Agent
+# simple-soe
 
-Cluster: `simple-soe-cluster-074b55ec662880a9b91b986213323a0b-0000.us-east.containers.appdomain.cloud`
+- https://ibm.quip.com/BSLPABbbzpAB/SOE-Migration-Notes
+- https://www.twilio.com/docs/sms/tutorials/how-to-receive-and-reply-python
 
-`https://ibm.quip.com/BSLPABbbzpAB/SOE-Migration-Notes`
+`https://us-south.assistant.watson.cloud.ibm.com/crn:v1:bluemix:public:conversation:us-south:a%2F8181f93cf3b742dbd2ab762ed3462b7f:df8d9ee2-3c04-44b7-81f1-fb2eae978e56::/home`
 
-To get entry point, get public IP from `ibmcloud ks workers -c c264ej5w0e9k1jc6fht0` and 
-get port from 'Nodeport' value from `kubectl describe service simple-soe-service`. This works for `http` only.
-E.g.
-  - `curl http://169.61.113.146:32453/`
-  - `curl http://169.61.113.146:32453/build`
-  
-Ingress only works with `https`:
-  - `https://simple-soe-cluster-074b55ec662880a9b91b986213323a0b-0000.us-east.containers.appdomain.cloud`
-  - `https://simple-soe-cluster-074b55ec662880a9b91b986213323a0b-0000.us-east.containers.appdomain.cloud/`
-  - `https://simple-soe-cluster-074b55ec662880a9b91b986213323a0b-0000.us-east.containers.appdomain.cloud/build`
+`https://simple-soe-app.9mzop27k89f.us-south.codeengine.appdomain.cloud/pre-webhook`
+`https://simple-soe-app.9mzop27k89f.us-south.codeengine.appdomain.cloud/post-webhook`
+
+`ic ce app logs --app simple-soe-app`
+
+
+
+

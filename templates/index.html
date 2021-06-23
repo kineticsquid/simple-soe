@@ -1,0 +1,31 @@
+<html>
+<head>
+  <base href="/">
+  <title>Sudoku Webhooks</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<h1>Sudoku Webhooks</h1>
+<ul>
+    <li><a href="/build">Build</a></li>
+    <li><a href="/redis">Redis</a></li>
+    <li><a href="/context">Context</a></li>
+    <li><a href="/clear_redis">Clear Redis</a></li>
+    <li><a href="/test_image">Test Image</a></li>
+    <li><a href="/test_solver">Test Solver</a></li>
+</ul>
+<script>
+  window.watsonAssistantChatOptions = {
+      integrationID: "10d65787-944e-455b-bd0e-6c5452c491ae", // The ID of this integration.
+      region: "us-south", // The region your integration is hosted in.
+      serviceInstanceID: "df8d9ee2-3c04-44b7-81f1-fb2eae978e56", // The ID of your service instance.
+      onLoad: function(instance) { instance.render(); }
+    };
+  setTimeout(function(){
+    const t=document.createElement('script');
+    t.src="https://web-chat.global.assistant.watson.appdomain.cloud/loadWatsonAssistantChat.js";
+    document.head.appendChild(t);
+  });
+</script>
+</body>
+</html>

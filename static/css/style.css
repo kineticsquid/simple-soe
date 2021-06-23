@@ -1,0 +1,31 @@
+/* style.css
+ * This file provides css styles.
+ */
+
+body,html {
+	background-color: #6b7b84;
+	height: 100%;
+	margin-top: 20px;
+	margin-bottom: 20px;
+	font-family: monospace;
+	font-size: 125%;
+}
+
+th, td {
+  border: 2px solid black;
+  border-style: solid;
+}
+
+table {
+  border: 2px solid black;
+  border-collapse: collapse;
+  border-style: solid;
+}
+
+input {
+    text-align:center;font-family:monospace; font-size:40px;
+}
+
+element {
+  border-style: solid;
+}
