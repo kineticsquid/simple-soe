@@ -142,38 +142,6 @@ def build():
     return app.send_static_file('build.txt')
 
 
-@app.route('/context')
-def context():
-    webhook_json = runtime_cache.get(PRE_WEBHOOK_INPUT)
-    if webhook_json is None:
-        pre_webhook_input = {'time': 'N/A', 'input': {}}
-    else:
-        pre_webhook_input = {'time': str(datetime.now()), 'input': json.loads(webhook_json)}
-    webhook_json = runtime_cache.get(PRE_WEBHOOK_OUTPUT)
-    if webhook_json is None:
-        pre_webhook_output = {'time': 'N/A', 'output': {}}
-    else:
-        pre_webhook_output = {'time': str(datetime.now()), 'output': json.loads(webhook_json)}
-    webhook_json = runtime_cache.get(POST_WEBHOOK_INPUT)
-    if webhook_json is None:
-        post_webhook_input = {'time': 'N/A', 'input': {}}
-    else:
-        post_webhook_input = {'time': str(datetime.now()), 'input': json.loads(webhook_json)}
-    webhook_json = runtime_cache.get(POST_WEBHOOK_OUTPUT)
-    if webhook_json is None:
-        post_webhook_output = {'time': 'N/A', 'output': {}}
-    else:
-        post_webhook_output = {'time': str(datetime.now()), 'output': json.loads(webhook_json)}
-
-    msg = {'Pre-webhook input': pre_webhook_input,
-           'Pre-webhook output': pre_webhook_output,
-           'Post-webhook input': post_webhook_input,
-           'Post-webhook output': post_webhook_output
-           }
-    response = jsonify(msg)
-    return response
-
-
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.data
@@ -181,14 +149,14 @@ def webhook():
     event = msg[EVENT][NAME]
     if event == MESSAGE_RECEIVED:
         add_log_entry('>>>>>>>>>>>>>>>>>>>> Assistant pre-webhook invoked')
-        runtime_cache.setex(PRE_WEBHOOK_INPUT, REDIS_TTL, json.dumps(msg))
+        add_log_entry('Context before pre-webhook: %s' % get_context_from_redis(msg))
         msg = pre_process(msg)
-        runtime_cache.setex(PRE_WEBHOOK_OUTPUT, REDIS_TTL, json.dumps(msg))
+        add_log_entry('Context after pre-webhook: %s' % get_context_from_redis(msg))
     elif event == MESSAGE_PROCESSED:
         add_log_entry('>>>>>>>>>>>>>>>>>>>> Assistant post-webhook invoked')
-        runtime_cache.setex(POST_WEBHOOK_INPUT, REDIS_TTL, json.dumps(msg))
+        add_log_entry('Context before post-webhook: %s' % get_context_from_redis(msg))
         msg = post_process(msg)
-        runtime_cache.setex(POST_WEBHOOK_OUTPUT, REDIS_TTL, json.dumps(msg))
+        add_log_entry('Context after post-webhook: %s' % get_context_from_redis(msg))
     add_log_entry('Webhook results:')
     add_log_entry(msg)
     response = jsonify(msg)
@@ -217,31 +185,38 @@ def post_process(message):
                 # Going to insert a greeting before any response text.
                 output[GENERIC].insert(0, {RESPONSE_TYPE: TEXT, TEXT: 'Well, Hello. '})
 
-    if get_context(message, PUZZLE_ACTION) == PROVIDE_HINT:
-        provide_hint(message)
-    elif get_context(message, PUZZLE_ACTION) == FIX_INPUT:
-        fix_input(message)
-    elif get_context(message, PUZZLE_ACTION) == PROVIDE_SOLUTION:
+    action = None
+    context = message[PAYLOAD][CONTEXT][SKILLS][MAIN_SKILL].get(USER_DEFINED)
+    if context is not None:
+        action = context.get(PUZZLE_ACTION)
+        if action is not None and len(action) == 0:
+            action = None
+    if action == HINT_OR_FIX:
+        if get_context(message, PUZZLE_SOLUTION) is not None:
+            provide_hint(message)
+        else:
+            fix_input(message)
+    elif action == PROVIDE_SOLUTION:
         provide_solution_matrix(message)
-    elif get_context(message, PUZZLE_ACTION) == PROCESS_INPUT:
+    elif action == PROCESS_INPUT:
         process_input(message)
-    elif get_context(message, PUZZLE_ACTION) == PROCESS_INPUT_IMAGE:
+    elif action == PROCESS_INPUT_IMAGE:
         process_input_image2(message)
-    elif get_context(message, PUZZLE_ACTION) == ECHO_INPUT:
+    elif action == ECHO_INPUT:
         provide_input_matrix(message)
-    elif get_context(message, PUZZLE_ACTION) == SOLVE_PUZZLE:
+    elif action == SOLVE_PUZZLE:
         solve_puzzle(message)
-    elif get_context(message, PUZZLE_ACTION) == CHECK_STATUS:
+    elif action == CHECK_STATUS:
         check_status(message)
-    elif get_context(message, PUZZLE_ACTION) == CHANGE_NAME:
+    elif action == CHANGE_NAME:
         change_name(message)
-    elif get_context(message, PUZZLE_ACTION) == START_OVER:
+    elif action == START_OVER:
         clean_up(message)
-    elif get_context(message, PUZZLE_ACTION) == BYE:
+    elif action == BYE:
         clean_up(message)
         terminate_session(message)
-    if get_context(message, PUZZLE_ACTION) is not None:
-        delete_context(message, PUZZLE_ACTION)
+    if action is not None:
+        message[PAYLOAD][CONTEXT][SKILLS][MAIN_SKILL][USER_DEFINED][PUZZLE_ACTION] = ''
 
     # padding output text sentences so they show up better through Twilio
     for item in output[GENERIC]:
@@ -262,10 +237,79 @@ def post_process(message):
 
 
 def provide_hint(message):
-    def get_hint(message):
+
+    row = None
+    column = None
+    proposed_answer = None
+    index = 0
+    entities = message[PAYLOAD][OUTPUT].get(ENTITIES)
+    if entities is not None and len(entities) >= 2:
+        while index < len(entities):
+            entity = entities[index]
+            if entity[ENTITY] == 'ordinal':
+                last_value_found = ordinal_to_integer(entity)
+                if entities[index + 1][ENTITY] == 'row':
+                    row = last_value_found
+                    index += 2
+                elif entities[index + 1][ENTITY] == 'column':
+                    column = last_value_found
+                    index += 2
+                else:
+                    index += 1
+            elif entity[ENTITY] == 'row':
+                if entities[index + 1][ENTITY] == 'sys-number':
+                    row = int(entities[index + 1]['value'])
+                    index += 2
+                else:
+                    index += 1
+            elif entity[ENTITY] == 'column':
+                if entities[index + 1][ENTITY] == 'sys-number':
+                    column = int(entities[index + 1]['value'])
+                    index += 2
+                else:
+                    index += 1
+            elif entity[ENTITY] == 'sys-number':
+                proposed_answer = int(entity['value'])
+                index += 1
+            else:
+                index += 1
+            if row is not None and column is not None and proposed_answer is not None:
+                break
+    solution = get_context(message, PUZZLE_SOLUTION)
+    if row is not None and (row < 1 or row > 9) or column is not None and (column < 1 or column > 9):
+        hint = 'Row and column need to be values from 1 to 9.'
+    elif row is not None and column is not None:
+        answer = solution[row - 1][column - 1]
+        if proposed_answer is None:
+            hint = 'The value of row %s column %s is %s.' % (row, column, answer)
+        else:
+            if proposed_answer == answer:
+                hint = 'The value of row %s column %s is %s.' % (row, column, proposed_answer)
+            else:
+                hint = 'The value of row %s column %s is not %s.' % (row, column, proposed_answer)
+    elif row is not None:
+        hint = 'The value of row %s is %s.' % (row, solution[row - 1])
+    elif column is not None:
+        column_values = []
+        for row in solution:
+            column_values.append(row[column - 1])
+        hint = 'The value of column %s is %s.' % (column, column_values)
+    else:
+        # Shouldn't get here
+        hint = 'I\'m sorry, I don\'t have enough information to give you a hint.'
+
+    set_response_text(message, [hint])
+    return message
+
+
+def fix_input(message):
+    input_matrix = get_context(message, PUZZLE_INPUT_MATRIX)
+    if input_matrix is None:
+        text = 'I don\'t have an input matrix from you yet.'
+    else:
         row = None
         column = None
-        proposed_answer = None
+        new_value = None
         index = 0
         entities = message[PAYLOAD][OUTPUT].get(ENTITIES)
         if entities is not None and len(entities) >= 2:
@@ -294,102 +338,24 @@ def provide_hint(message):
                     else:
                         index += 1
                 elif entity[ENTITY] == 'sys-number':
-                    proposed_answer = int(entity['value'])
+                    new_value = int(entity['value'])
+                    index += 1
+                elif entity[ENTITY] == 'empty':
+                    new_value = 0
                     index += 1
                 else:
                     index += 1
-                if row is not None and column is not None and proposed_answer is not None:
+                if row is not None and column is not None and new_value is not None:
                     break
-        solution = get_context(message, PUZZLE_SOLUTION)
-        if row is not None and (row < 1 or row > 9) or column is not None and (column < 1 or column > 9):
-            hint = 'Row and column need to be values from 1 to 9.'
-        elif row is not None and column is not None:
-            answer = solution[row - 1][column - 1]
-            if proposed_answer is None:
-                hint = 'The value of row %s column %s is %s.' % (row, column, answer)
-            else:
-                if proposed_answer == answer:
-                    hint = 'The value of row %s column %s is %s.' % (row, column, proposed_answer)
-                else:
-                    hint = 'The value of row %s column %s is not %s.' % (row, column, proposed_answer)
-        elif row is not None:
-            hint = 'The value of row %s is %s.' % (row, solution[row - 1])
-        elif column is not None:
-            column_values = []
-            for row in solution:
-                column_values.append(row[column - 1])
-            hint = 'The value of column %s is %s.' % (column, column_values)
+        if row is not None and column is not None and new_value is not None:
+            input_matrix[row - 1][column - 1] = new_value
+            set_context(message, PUZZLE_INPUT_MATRIX, input_matrix)
+            if new_value == 0:
+                new_value = 'blank'
+            text = 'OK, row %s, column %s is now %s.' % (row, column, new_value)
         else:
-            # Shouldn't get here
-            hint = 'I\'m sorry, I don\'t have enough information to give you a hint.'
-        return (hint)
-
-    solution = get_context(message, PUZZLE_SOLUTION)
-    if solution is not None:
-        text = get_hint(message)
-    else:
-        text = 'I don\'t yet have a solution to provide hints for.'
-    set_response_text(message, [text])
-    return message
-
-
-def fix_input(message):
-    solution = get_context(message, PUZZLE_SOLUTION)
-    if solution is not None:
-        text = 'I\'ve already solved this puzzle. You can\'t change the input now.'
-    else:
-        input_matrix = get_context(message, PUZZLE_INPUT_MATRIX)
-        if input_matrix is None:
-            text = 'I don\'t have an input matrix from you yet.'
-        else:
-            row = None
-            column = None
-            new_value = None
-            index = 0
-            entities = message[PAYLOAD][OUTPUT].get(ENTITIES)
-            if entities is not None and len(entities) >= 2:
-                while index < len(entities):
-                    entity = entities[index]
-                    if entity[ENTITY] == 'ordinal':
-                        last_value_found = ordinal_to_integer(entity)
-                        if entities[index + 1][ENTITY] == 'row':
-                            row = last_value_found
-                            index += 2
-                        elif entities[index + 1][ENTITY] == 'column':
-                            column = last_value_found
-                            index += 2
-                        else:
-                            index += 1
-                    elif entity[ENTITY] == 'row':
-                        if entities[index + 1][ENTITY] == 'sys-number':
-                            row = int(entities[index + 1]['value'])
-                            index += 2
-                        else:
-                            index += 1
-                    elif entity[ENTITY] == 'column':
-                        if entities[index + 1][ENTITY] == 'sys-number':
-                            column = int(entities[index + 1]['value'])
-                            index += 2
-                        else:
-                            index += 1
-                    elif entity[ENTITY] == 'sys-number':
-                        new_value = int(entity['value'])
-                        index += 1
-                    elif entity[ENTITY] == 'empty':
-                        new_value = 0
-                        index += 1
-                    else:
-                        index += 1
-                    if row is not None and column is not None and new_value is not None:
-                        break
-            if row is not None and column is not None and new_value is not None:
-                input_matrix[row - 1][column - 1] = new_value
-                set_context(message, PUZZLE_INPUT_MATRIX, input_matrix)
-                if new_value == 0:
-                    new_value = 'blank'
-                text = 'OK, row %s, column %s is now %s.' % (row, column, new_value)
-            else:
-                text = 'I\'m sorry, I didn\'t understand your fix'
+            text = 'I\'m sorry, I don\'t understand you. I don\'t have a solution yet to your puzzle. '
+            text += 'Ask me to solve your puzzle of tell me to fix an input at a specific row and column.'
     set_response_text(message, [text])
     return message
 
@@ -429,29 +395,33 @@ def provide_solution_matrix(message):
 
 
 def process_input(message):
-    text_input = ''
-    for entry in message[PAYLOAD][OUTPUT][ENTITIES]:
-        if entry[ENTITY] == ENTITY_EMPTY:
-            text_input += '0'
-        elif entry[ENTITY] == ENTITY_SYS_NUMBER:
-            text_input += str(entry['value'])
-    if len(text_input) > 81:
-        text_input = text_input[0:81]
+    if get_context(message, PUZZLE_INPUT_MATRIX) is not None:
+        set_response_text(message, ['I already have a matrix to solve.',
+                                    'If you want me to solve another, tell me to start over.'])
     else:
-        if len(text_input) < 81:
-            text_input = text_input.ljust(81, '0')
-    # At this point we have a valid sequence of 81 digits representing the input matrix. Now create the matrix
-    input_string_index = 0
-    input_matrix = []
-    for row in range(0, 9):
-        new_row = []
-        for column in range(0, 9):
-            new_row.append(int(text_input[input_string_index]))
-            input_string_index += 1
-        input_matrix.append((new_row))
+        text_input = ''
+        for entry in message[PAYLOAD][OUTPUT][ENTITIES]:
+            if entry[ENTITY] == ENTITY_EMPTY:
+                text_input += '0'
+            elif entry[ENTITY] == ENTITY_SYS_NUMBER:
+                text_input += str(entry['value'])
+        if len(text_input) > 81:
+            text_input = text_input[0:81]
+        else:
+            if len(text_input) < 81:
+                text_input = text_input.ljust(81, '0')
+        # At this point we have a valid sequence of 81 digits representing the input matrix. Now create the matrix
+        input_string_index = 0
+        input_matrix = []
+        for row in range(0, 9):
+            new_row = []
+            for column in range(0, 9):
+                new_row.append(int(text_input[input_string_index]))
+                input_string_index += 1
+            input_matrix.append((new_row))
 
-    set_context(message, PUZZLE_INPUT_MATRIX, input_matrix)
-    provide_input_matrix(message)
+        set_context(message, PUZZLE_INPUT_MATRIX, input_matrix)
+        provide_input_matrix(message)
 
     return message
 
@@ -777,21 +747,24 @@ def vocalize_matrix(matrix):
 
 
 def solve_puzzle(message):
-    http_headers = {'Content-Type': 'application/json',
-                    'Accept': 'application/json'}
-    data = json.dumps({'inputMatrix': get_context(message, PUZZLE_INPUT_MATRIX)})
-    response = requests.post(SUDOKU_SOLVER_URL + 'getSolution', headers=http_headers,
-                             data=data)
-    solution_processing_message = None
-    if response.status_code == 200:
-        results = response.json()
-        set_context(message, PUZZLE_SOLUTION, results)
-        solution_processing_message = 'I have a solution to your puzzle.'
-
+    if get_context(message, PUZZLE_INPUT_MATRIX) is None:
+        solution_processing_message = 'I don\'t have a matrix to solve.'
     else:
-        solution_processing_message = 'I can\'t solve your puzzle. Make sure it\'s a valid puzzle. And this has nothing to do with the number of margaritas I had last night.'
-        if get_context(message, PUZZLE_SOLUTION) is not None:
-            delete_context(message, PUZZLE_SOLUTION)
+        http_headers = {'Content-Type': 'application/json',
+                        'Accept': 'application/json'}
+        data = json.dumps({'inputMatrix': get_context(message, PUZZLE_INPUT_MATRIX)})
+        response = requests.post(SUDOKU_SOLVER_URL + 'getSolution', headers=http_headers,
+                                 data=data)
+        solution_processing_message = None
+        if response.status_code == 200:
+            results = response.json()
+            set_context(message, PUZZLE_SOLUTION, results)
+            solution_processing_message = 'I have a solution to your puzzle.'
+
+        else:
+            solution_processing_message = 'I can\'t solve your puzzle. Make sure it\'s a valid puzzle. And this has nothing to do with the number of margaritas I had last night.'
+            if get_context(message, PUZZLE_SOLUTION) is not None:
+                delete_context(message, PUZZLE_SOLUTION)
 
     if solution_processing_message is not None:
         add_response_text(message, [solution_processing_message])
@@ -879,7 +852,6 @@ def change_name(message):
 
 
 def clean_up(message):
-    delete_context(message, PUZZLE_ACTION)
     delete_context(message, PUZZLE_SOLUTION)
     delete_context(message, PUZZLE_INPUT)
     delete_context(message, PUZZLE_INPUT_MATRIX)
@@ -917,6 +889,24 @@ def add_log_entry(comment, message=None):
         app.logger.info(comment + " " + log_message)
 
 
+def get_redis_context_key(message):
+    return "/context/%s" % message[PAYLOAD][CONTEXT][GLOBAL][SYSTEM][USER_ID]
+
+def get_context_from_redis(message):
+    redis_context_key = get_redis_context_key(message)
+    context_string = runtime_cache.get(redis_context_key)
+    if context_string is None:
+        context = {}
+    else:
+        context = json.loads(context_string)
+    return context
+
+def put_context_to_redis(message, context):
+    redis_context_key = get_redis_context_key(message)
+    runtime_cache.set(redis_context_key, json.dumps(context))
+    return context
+
+
 """
 The get and delete context functions implement a hack that works around a quirk in assistant context
 handling between webhooks and dialog turns. Removing a context variable, by removing the key, doesn't always
@@ -926,27 +916,22 @@ empty string on a get, return None.
 
 
 def get_context(message, key):
-    value = None
-    user_defined = message[PAYLOAD][CONTEXT][SKILLS][MAIN_SKILL].get(USER_DEFINED)
-    if user_defined is not None:
-        value = user_defined.get(key)
-        if value is not None:
-            if len(value) == 0:
-                value = None
-    return value
+    context = get_context_from_redis(message)
+    return context.get(key)
 
 
 def set_context(message, key, value):
-    user_defined = message[PAYLOAD][CONTEXT][SKILLS][MAIN_SKILL].get(USER_DEFINED)
-    if user_defined is None:
-        message[PAYLOAD][CONTEXT][SKILLS][MAIN_SKILL][USER_DEFINED] = []
-    message[PAYLOAD][CONTEXT][SKILLS][MAIN_SKILL][USER_DEFINED][key] = value
+    context = get_context_from_redis(message)
+    context[key] = value
+    put_context_to_redis(message, context)
 
 
 def delete_context(message, key):
-    value = get_context(message, key)
+    context = get_context_from_redis(message)
+    value = context.get(key)
     if value is not None:
-        message[PAYLOAD][CONTEXT][SKILLS][MAIN_SKILL][USER_DEFINED][key] = ''
+        context.pop(key)
+    put_context_to_redis(message, context)
 
 
 CONTEXT = 'context'
@@ -958,6 +943,7 @@ GLOBAL = 'global'
 SYSTEM = 'system'
 TURN_COUNT = 'turn_count'
 SESSION_ID = 'session_id'
+USER_ID = 'user_id'
 SKILLS = 'skills'
 MAIN_SKILL = 'main skill'
 USER_DEFINED = 'user_defined'
@@ -992,8 +978,7 @@ POST_WEBHOOK_OUTPUT = '/sudoku/post-webhook-output.json'
 
 ECHO_INPUT = 'echo_input'
 CHECK_STATUS = 'check_status'
-FIX_INPUT = 'fix_input'
-PROVIDE_HINT = 'provide_hint'
+HINT_OR_FIX = 'hint_or_fix'
 CONVERSATION_START = 'conversation_start'
 START_OVER = 'start_over'
 PROVIDE_SOLUTION = 'provide_solution'
