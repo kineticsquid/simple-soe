@@ -13,18 +13,7 @@ ADD templates/ /app/templates/
 RUN mkdir /app/tessdata
 ADD tessdata/ /app/tessdata/
 ADD tessdata/ /usr/share/tessdata/
-
-
-ADD tag-build.sh /app/
-
-RUN date > /app/static/build.txt
 ADD static/favicon-96x96.png /app/static/
 
-RUN ls -R
-RUN cat /app/static/build.txt
-
-
-EXPOSE 5040
-
 # Run app.py when the container launches
-CMD ["python3", "simple_soe.py"]
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 simple-soe:app
