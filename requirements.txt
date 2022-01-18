@@ -1,6 +1,5 @@
 requests
 Flask
-watson_developer_cloud
 redis
 twilio
 opencv-python
