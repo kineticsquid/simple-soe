@@ -138,7 +138,19 @@ def favicon():
 
 @app.route('/build', methods=['GET', 'POST'])
 def build():
-    return date_environ
+    try:
+        build_file = open('static/build.txt')
+        build_stamp = build_file.readlines()[0]
+        build_file.close()
+    except FileNotFoundError:
+        from datetime import date
+        build_stamp = generate_build_stamp()
+    results = 'Running %s %s.\nBuild %s.\nPython %s.' % (sys.argv[0], app.name, build_stamp, sys.version)
+    return results
+
+def generate_build_stamp():
+    from datetime import date
+    return 'Development build - %s' % date.today().strftime("%m/%d/%y")
 
 
 @app.route('/webhook', methods=['POST'])
@@ -1016,15 +1028,16 @@ runtime_cache = redis.Redis(
 runtime_cache.set('/test/test', 'test_value')
 test_value = runtime_cache.delete('/test/test')
 
-print('Starting %s....' % sys.argv[0])
+print('Starting %s %s' % (sys.argv[0], app.name))
 print('Python: ' + sys.version)
-date_environ = os.environ.get('DATE')
-if date_environ is None:
-    date_environ = 'dev environment'
-print('Running build: %s' % date_environ)
-print('Environment Variables:')
-environment_vars = dict(os.environ)
-print(environment_vars)
+try:
+    build_file = open('static/build.txt')
+    build_stamp = build_file.readlines()[0]
+    build_file.close()
+except FileNotFoundError:
+    from datetime import date
+    build_stamp = generate_build_stamp()
+print('Running build: %s' % build_stamp)
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

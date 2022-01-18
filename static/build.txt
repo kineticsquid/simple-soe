@@ -1,2 +1,0 @@
-Simple SOE
-Temp file for running locally
