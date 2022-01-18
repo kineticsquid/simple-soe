@@ -14,12 +14,16 @@ Main routine to process the matrix_image and extract the sudoku matrix from it
 """
 
 
-def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=None):
+def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=None, logging=True):
+
+    def log(message):
+        if logging:
+            print(message)
 
     # This routine forks a bunch of threads to process in parallel various combinations of
     # blurring and b/w thresholds to attempt to identify digits in the matrix cells
     def do_image_processing(image, input_matrix, x_y_xoords, lines, done_event):
-        x_coords, y_coords, input_image_lines = get_cell_boundaries(image)
+        x_coords, y_coords, input_image_lines = get_cell_boundaries(image, logging=logging)
         if image_type == SCREEN_CAP:
             # These are the combinations of image blur and threshold that seem to do best at
             # OCR on the numbers in the cells. This is based on image type
@@ -43,7 +47,8 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
         for values in pre_processing_values:
             th = Thread(target=process_image,
                         args=(image, values['blur'], values['threshold'],
-                              x_coords, y_coords, input_matrix, tesseract_config, done_event))
+                              x_coords, y_coords, input_matrix, tesseract_config,
+                              done_event, logging))
             th.start()
             threads.append(th)
         for th in threads:
@@ -59,19 +64,19 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
             if im_done_event.is_set():
                 break
             time.sleep(time_interval)
-            print("Max timer - %s seconds elapsed" % (time_interval * (i + 1)))
+            log("Max timer - %s seconds elapsed" % (time_interval * (i + 1)))
         if im_done_event.is_set() is False:
             im_done_event.set()
-            print("Max processing time exceeded.")
+            log("Max processing time exceeded.")
         else:
-            print("Cancelling max wait time processing.")
+            log("Cancelling max wait time processing.")
         return
 
     start_time = time.time()
-    print('Start Time: %.2f' % start_time)
+    log('Start Time: %.2f' % start_time)
 
     if image_type is None:
-        image_type = get_image_type(matrix_image)
+        image_type = get_image_type(matrix_image, logging=logging)
 
     if tesseract_config is None:
         tesseract_config = get_tesseract_config_based_on_image_type(image_type)
@@ -94,7 +99,7 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
     # Continue processing when one of the image processing or the max time internals finishes.
     done_event.wait()
 
-    print('End Time: %.2f' % (time.time() - start_time))
+    log('End Time: %.2f' % (time.time() - start_time))
 
     image_with_ocr = generate_image_with_input(matrix_image, coordinates[0], coordinates[1], input_matrix)
     purple = (200, 0, 200)
@@ -106,12 +111,16 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
 Routine to get image type based on characteristics of the digital image
 """
 
-def get_image_type(image):
+def get_image_type(image, logging=True):
+
+    def log(message):
+        if logging:
+            print(message)
     color_dist = np.histogram(image, bins=256)
     std_dev = np.std(color_dist[0])
     # Multiplying by 1000 below to make the number more readable
     ratio_std_to_image_size = std_dev * 1000 / (image.shape[0] * image.shape[1])
-    print('Image Size: %s. Ratio of std color counts to size: %.2f.' %
+    log('Image Size: %s. Ratio of std color counts to size: %.2f.' %
                  ((image.shape[0] * image.shape[1]), ratio_std_to_image_size))
     if ratio_std_to_image_size < 10:
         # If this ration is < 10, it means that the greyscale color counts are more uniformly distributed,
@@ -121,12 +130,14 @@ def get_image_type(image):
         # Else if the value >= 10 it means the greyscale color counts are less evenly distributes
         # (more monochromatic) meaning image is more characteristic of a screen captiure
         image_type = SCREEN_CAP
-    print('Image type: %s' % image_type)
+    log('Image type: %s' % image_type)
     return image_type
 
 """
 Routine to determine tesseract config parameters based on characteristics of the 
-input image
+input image.
+
+Confirm with /notebooks/test_ocr
 """
 def get_tesseract_config_based_on_image_type(image_type):
     if image_type == DIGITAL_PIC:
@@ -142,65 +153,69 @@ def get_tesseract_config_based_on_image_type(image_type):
 Routine to process and image with a specific set of parameters and return
 an input matrix and other analyses.
 """
-def process_image(image, blur, threshold, x_s, y_s, input_matrix, tesseract_config, done_event):
+def process_image(image, blur, threshold, x_s, y_s, input_matrix, tesseract_config, done_event, logging=True):
 
-        start = time.time()
-        print("Starting %s - blur: %s, threshold: %s" % (threading.get_ident(), blur, threshold))
-        # blur the image
-        blurred_image = cv2.medianBlur(image, blur)
+    def log(message):
+        if logging:
+            print(message)
 
-        # Make the image monochrome. If the original pixel value > threshold, 1, otherwise 0.
-        (thresh, monochrome_image) = cv2.threshold(blurred_image, threshold, 1, cv2.THRESH_BINARY_INV)
+    start = time.time()
+    log("Starting %s - blur: %s, threshold: %s" % (threading.get_ident(), blur, threshold))
+    # blur the image
+    blurred_image = cv2.medianBlur(image, blur)
 
-        if len(y_s) == 9 and len(x_s) == 9:
-            row = 0
-            for y_coord in y_s:
-                column = 0
-                for x_coord in x_s:
-                    if input_matrix[row][column] == 0:
-                        untrimmed_monochrome_image = monochrome_image[y_coord[0]:y_coord[1], x_coord[0]:x_coord[1]]
-                        image_height, image_width = untrimmed_monochrome_image.shape
-                        image_sum = untrimmed_monochrome_image.sum()
-                        image_density = image_sum / (image_width * image_height)
-                        # If the image density (% of black pixels in the image) is less than a certain threshold
-                        # we assume the cell is empty and return 0. This is not a test for 0 % since there can be
-                        # noise in the image. Or if the density is 1 it means it's completely black, so mark it
-                        # as zero also. Doing this here as it then makes the trimming easier.
-                        # print("Row %s, column %s." % (row, column), {})
-                        margin_of_error = 0.02
-                        if margin_of_error < image_density < (1 - margin_of_error):
-                            untrimmed_original_image = image[y_coord[0]:y_coord[1], x_coord[0]:x_coord[1]]
-                            # show_image(untrimmed_original_image,
-                            #            title="Y - %s:%s. X - %s:%s" % (y_coord[0], y_coord[1], x_coord[0], x_coord[1]))
+    # Make the image monochrome. If the original pixel value > threshold, 1, otherwise 0.
+    (thresh, monochrome_image) = cv2.threshold(blurred_image, threshold, 1, cv2.THRESH_BINARY_INV)
 
-                            # With the move to tesseract 4.0.0, the new models don't support the whitelist
-                            # config option. The original models do, by specifying --oem=0. However, the installation
-                            # of tesseract 4.0.0 doesn't appear to include the right languages; running with ==oem=0
-                            # results in a runtime error. Also, with 4.1.1, the whitelist support is added for the newer
-                            # models. So, just going with the whitelist and adding code for when it is ignored.
-                            digit_str = pytesseract.image_to_string(untrimmed_original_image, config=tesseract_config)
-                            digit_str = digit_str.strip()
-                            print(' %s - Row: %s, Column %s, Density %.2f: \'%s\'' %
-                                         (threading.get_ident(), row + 1, column + 1, image_density, digit_str))
-                            if digit_str.isdigit() and len(digit_str) == 1:
-                                number = int(digit_str)
-                                input_matrix[row][column] = number
+    if len(y_s) == 9 and len(x_s) == 9:
+        row = 0
+        for y_coord in y_s:
+            column = 0
+            for x_coord in x_s:
+                if input_matrix[row][column] == 0:
+                    untrimmed_monochrome_image = monochrome_image[y_coord[0]:y_coord[1], x_coord[0]:x_coord[1]]
+                    image_height, image_width = untrimmed_monochrome_image.shape
+                    image_sum = untrimmed_monochrome_image.sum()
+                    image_density = image_sum / (image_width * image_height)
+                    # If the image density (% of black pixels in the image) is less than a certain threshold
+                    # we assume the cell is empty and return 0. This is not a test for 0 % since there can be
+                    # noise in the image. Or if the density is 1 it means it's completely black, so mark it
+                    # as zero also. Doing this here as it then makes the trimming easier.
+                    # print("Row %s, column %s." % (row, column), {})
+                    margin_of_error = 0.02
+                    if margin_of_error < image_density < (1 - margin_of_error):
+                        untrimmed_original_image = image[y_coord[0]:y_coord[1], x_coord[0]:x_coord[1]]
+                        # show_image(untrimmed_original_image,
+                        #            title="Y - %s:%s. X - %s:%s" % (y_coord[0], y_coord[1], x_coord[0], x_coord[1]))
 
-                        column += 1
-                        if done_event.is_set():
-                            break
-                row += 1
-                if done_event.is_set():
-                    break
+                        # With the move to tesseract 4.0.0, the new models don't support the whitelist
+                        # config option. The original models do, by specifying --oem=0. However, the installation
+                        # of tesseract 4.0.0 doesn't appear to include the right languages; running with ==oem=0
+                        # results in a runtime error. Also, with 4.1.1, the whitelist support is added for the newer
+                        # models. So, just going with the whitelist and adding code for when it is ignored.
+                        digit_str = pytesseract.image_to_string(untrimmed_original_image, config=tesseract_config)
+                        digit_str = digit_str.strip()
+                        log(' %s - Row: %s, Column %s, Density %.2f: \'%s\'' %
+                                     (threading.get_ident(), row + 1, column + 1, image_density, digit_str))
+                        if digit_str.isdigit() and len(digit_str) == 1:
+                            number = int(digit_str)
+                            input_matrix[row][column] = number
 
-        elapsed = time.time() - start
-        if done_event.is_set() is False:
-            print("Ending %s - blur: %s, threshold: %s. Elapsed time: %.2f" %
+                    column += 1
+                    if done_event.is_set():
+                        break
+            row += 1
+            if done_event.is_set():
+                break
+
+    elapsed = time.time() - start
+    if done_event.is_set() is False:
+        log("Ending %s - blur: %s, threshold: %s. Elapsed time: %.2f" %
+                 (threading.get_ident(), blur, threshold, elapsed))
+    else:
+        log("Time out: %s - blur: %s, threshold: %s. Elapsed time: %.2f" %
                      (threading.get_ident(), blur, threshold, elapsed))
-        else:
-            print("Time out: %s - blur: %s, threshold: %s. Elapsed time: %.2f" %
-                         (threading.get_ident(), blur, threshold, elapsed))
-        return
+    return
 
 """
 Routine to pre-process an matrix_image before attempting to identify lines and extract digits. Among other things,
@@ -220,10 +235,14 @@ the digits
 """
 
 
-def get_cell_boundaries(image):
+def get_cell_boundaries(image, logging=True):
+
+    def log(message):
+        if logging:
+            print(message)
 
     # Find all the lines in the matrix_image
-    horizontal_lines, vertical_lines = find_lines(image)
+    horizontal_lines, vertical_lines = find_lines(image, logging=logging)
 
     def horizontal_sort_func(i):
         return (min(i[0][1], i[0][3]))
@@ -279,8 +298,8 @@ def get_cell_boundaries(image):
         # widths that caused valid rows/columns to be excluded. Trying 10 now.
         histogram_size = 10
         widths_histogram = np.histogram(coord_deltas, bins=histogram_size)
-        print('Coordinate widths histogram for refactoring:')
-        print(widths_histogram)
+        log('Coordinate widths histogram for refactoring:')
+        log(widths_histogram)
 
         shape = image.shape
         min_dimension = min(shape[0], shape[1])
@@ -308,7 +327,7 @@ def get_cell_boundaries(image):
         # prevent the calculations from resulting in something slightly out of the range
         min_width = min_width * .9
         max_width = max_width * 1.1
-        print('Min width: %s, Max width: %s' % (min_width, max_width))
+        log('Min width: %s, Max width: %s' % (min_width, max_width))
 
         # start by collecting the entries of the desired size and computing the average line width
         line_width_total = 0
@@ -430,26 +449,26 @@ def get_cell_boundaries(image):
             new_coord_delta_avg = np.average(new_coord_deltas)
             while len(new_coords) > 9:
                 if abs(abs(new_coords[0][0] - new_coords[0][1]) - new_coord_delta_avg) > abs(abs(new_coords[len(new_coords)-1][0] - new_coords[len(new_coords)-1][1]) - new_coord_delta_avg):
-                    print("Removing extra coord 0.")
+                    log("Removing extra coord 0.")
                     new_coords.pop(0)
 
                 else:
-                    print("Removing extra coord %s." % (len(new_coords) - 1) )
+                    log("Removing extra coord %s." % (len(new_coords) - 1) )
                     new_coords.pop(len(new_coords)-1)
 
         return new_coords
 
-    print('x coords before refactoring: %s' % x_coords)
-    print('y coords before refactoring: %s' % y_coords)
+    log('x coords before refactoring: %s' % x_coords)
+    log('y coords before refactoring: %s' % y_coords)
 
-    print("Refactor y coordinates")
+    log("Refactor y coordinates")
     y_coords = refactor_coords(y_coords, y_coord_deltas)
 
-    print("Refactor x coordinates")
+    log("Refactor x coordinates")
     x_coords = refactor_coords(x_coords, x_coord_deltas)
 
-    print('x coords after refactoring: %s' % x_coords)
-    print('y coords after refactoring: %s' % y_coords)
+    log('x coords after refactoring: %s' % x_coords)
+    log('y coords after refactoring: %s' % y_coords)
 
     return x_coords, y_coords, [vertical_lines, horizontal_lines]
 
@@ -474,7 +493,11 @@ horizontal lines (which are the actual vertical ones).
 """
 
 
-def find_lines(image):
+def find_lines(image, logging=True):
+
+    def log(message):
+        if logging:
+            print(message)
     """
     Routine to separate out and return only the horizontal and vertical lines and a separate list of those
     lines rejected.
@@ -540,19 +563,19 @@ def find_lines(image):
     max_line_gap = int(minimum_side / 100)
     threshold = int(minimum_side * 0.5)
 
-    print('\nImage width: %s' % image_width)
-    print('Image height: %s' % image_height)
-    print('Minimum side: %s' % minimum_side)
-    print('Minimum line length: %s' % min_line_length)
-    print('Max line gap: %s' % max_line_gap)
+    log('\nImage width: %s' % image_width)
+    log('Image height: %s' % image_height)
+    log('Minimum side: %s' % minimum_side)
+    log('Minimum line length: %s' % min_line_length)
+    log('Max line gap: %s' % max_line_gap)
 
     lines = cv2.HoughLinesP(inverted_image, 1, np.pi / 180, threshold=threshold, minLineLength=min_line_length,
                             maxLineGap=max_line_gap)
     horizontal_lines, vertical_lines, rejected_lines = separate_lines(lines)
-    print("\nThreshold: %s" % threshold)
-    print("Horizontal lines: %s" % len(horizontal_lines))
-    print("Vertical lines: %s" % len(vertical_lines))
-    print("Rejected lines: %s" % len(rejected_lines))
+    log("\nThreshold: %s" % threshold)
+    log("Horizontal lines: %s" % len(horizontal_lines))
+    log("Vertical lines: %s" % len(vertical_lines))
+    log("Rejected lines: %s" % len(rejected_lines))
     if not(enough_lines(horizontal_lines, vertical_lines)):
         # If this is a digital pic, finding lines is better is we blur it a little first.
         blurred_image = cv2.medianBlur(image, 15)
@@ -560,10 +583,10 @@ def find_lines(image):
         lines = cv2.HoughLinesP(inverted_image, 1, np.pi / 180, threshold=threshold, minLineLength=min_line_length,
                                 maxLineGap=max_line_gap)
         horizontal_lines, vertical_lines, rejected_lines = separate_lines(lines)
-        print("\nThreshold: %s" % threshold)
-        print("Horizontal lines: %s" % len(horizontal_lines))
-        print("Vertical lines: %s" % len(vertical_lines))
-        print("Rejected lines: %s" % len(rejected_lines))
+        log("\nThreshold: %s" % threshold)
+        log("Horizontal lines: %s" % len(horizontal_lines))
+        log("Vertical lines: %s" % len(vertical_lines))
+        log("Rejected lines: %s" % len(rejected_lines))
 
     return horizontal_lines, vertical_lines
 
