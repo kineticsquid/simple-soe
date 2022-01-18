@@ -12,7 +12,7 @@ jobs:
 
   deploy:
 
-    name: Google Cloud Run Deploy for Simple-SIE
+    name: Google Cloud Run Deploy for Simple-SOE
     runs-on: ubuntu-latest
     env:
       DOCKER_HUB_IMAGE_NAME: kineticsquid/${{ secrets.GCP_APPLICATION }}
