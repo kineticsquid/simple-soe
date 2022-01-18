@@ -14,6 +14,7 @@ RUN mkdir /app/tessdata
 ADD tessdata/ /app/tessdata/
 ADD tessdata/ /usr/share/tessdata/
 ADD static/favicon-96x96.png /app/static/
+RUN date > /app/static/build.txt
 
 # Run app.py when the container launches
 CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 simple-soe:app
