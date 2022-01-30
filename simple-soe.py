@@ -66,7 +66,7 @@ def index():
 @app.route('/test_image')
 def test_image():
     image_url = 'https://i.imgur.com/NnnZcYf.png'
-    message2 = {'payload': {'output': {'entities': [], 'generic':[]}, 'context': {'global': {'session_id': 'test_session_id'}, 'skills': {'main skill': {'user_defined': {}}}}}}
+    message2 = {'payload': {'output': {'entities': [], 'generic':[]}, 'context': {'global': {'system': {'user_id': 'Test'}, 'session_id': 'test_session_id'}, 'skills': {'main skill': {'user_defined': {}}}}}}
     process_input_image2(message2, media_url=image_url)
 
     return 'test finished'
@@ -74,7 +74,7 @@ def test_image():
 @app.route('/test_image2')
 def test_image2():
     image_url = 'https://i.imgur.com/HXzhPo4.jpg'
-    message2 = {'payload': {'output': {'entities': [], 'generic':[]}, 'context': {'global': {'session_id': 'test_session_id'}, 'skills': {'main skill': {'user_defined': {}}}}}}
+    message2 = {'payload': {'output': {'entities': [], 'generic':[]}, 'context': {'global': {'system': {'user_id': 'Test'}, 'session_id': 'test_session_id'}, 'skills': {'main skill': {'user_defined': {}}}}}}
     process_input_image2(message2, media_url=image_url)
 
     return 'test finished'
@@ -103,7 +103,7 @@ def test_solver():
 
 @app.route('/redis', defaults={'file_path': ''})
 @app.route('/redis/<path:file_path>')
-def images(file_path):
+def redis_content(file_path):
     if file_path is None or file_path == '':
         matrix_image_names_as_bytes = runtime_cache.keys()
         matrix_image_names = []
@@ -901,7 +901,7 @@ def add_log_entry(comment, message=None):
 
 
 def get_redis_context_key(message):
-    return "/context/%s" % message[PAYLOAD][CONTEXT][GLOBAL][SYSTEM][USER_ID]
+    return "/context/%s.json" % message[PAYLOAD][CONTEXT][GLOBAL][SYSTEM][USER_ID]
 
 def get_context_from_redis(message):
     redis_context_key = get_redis_context_key(message)
