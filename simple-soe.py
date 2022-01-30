@@ -641,6 +641,7 @@ def process_input_image2(message, media_url=None):
     if media_url is not None:
         response = requests.get(media_url)
         if response.status_code == 200:
+            add_log_entry('Successfully retrieved input image \'%s\'.' % media_url)
             results = response.content
             set_context(message, INPUT_IMAGE_ID,
                         '%s.%s' % (message[PAYLOAD][CONTEXT][GLOBAL][SESSION_ID], str(uuid.uuid1())[0:8]))
