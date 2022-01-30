@@ -653,6 +653,7 @@ def process_input_image2(message, media_url=None):
             add_response_text(message,
                               ['This\'ll just take a moment. Ask me in a bit.'])
         else:
+            add_log_entry('%s error retreiving input image \'%s\'.' % (response.status_code, media_url))
             add_response_text(message,
                               ['I\'m sorry. I had a problem understanding the matrix_image you sent.'])
     else:
