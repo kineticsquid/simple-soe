@@ -65,15 +65,13 @@ def index():
 
 @app.route('/test_image')
 def test_image():
-    image_url = 'https://i.imgur.com/NnnZcYf.png'
-    message2 = {'payload': {'output': {'entities': [], 'generic':[]}, 'context': {'global': {'system': {'user_id': 'Test'}, 'session_id': 'test_session_id'}, 'skills': {'main skill': {'user_defined': {}}}}}}
-    process_input_image2(message2, media_url=image_url)
-
-    return 'test finished'
-
-@app.route('/test_image2')
-def test_image2():
-    image_url = 'https://i.imgur.com/HXzhPo4.jpg'
+    # Image URLs:
+    #     image_url = 'https://i.imgur.com/NnnZcYf.png'
+    #     image_url = 'https://i.imgur.com/HXzhPo4.jpg'
+    args = dict(request.args)
+    image_url = args.get('url', None)
+    if image_url is None:
+        image_url = 'https://i.imgur.com/NnnZcYf.png'
     message2 = {'payload': {'output': {'entities': [], 'generic':[]}, 'context': {'global': {'system': {'user_id': 'Test'}, 'session_id': 'test_session_id'}, 'skills': {'main skill': {'user_defined': {}}}}}}
     process_input_image2(message2, media_url=image_url)
 
@@ -640,6 +638,7 @@ def process_input_image2(message, media_url=None):
                 media_url = get_context(message, PUZZLE_INPUT)[entity['location'][0]:entity['location'][1]]
                 break
     if media_url is not None:
+        add_log_entry('Retreiving input image \'%s\'.' % media_url)
         response = requests.get(media_url)
         if response.status_code == 200:
             results = response.content
