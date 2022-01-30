@@ -75,7 +75,7 @@ def test_image():
     message2 = {'payload': {'output': {'entities': [], 'generic':[]}, 'context': {'global': {'system': {'user_id': 'Test'}, 'session_id': 'test_session_id'}, 'skills': {'main skill': {'user_defined': {}}}}}}
     process_input_image2(message2, media_url=image_url)
 
-    return 'test finished'
+    return 'Test requested.'
 
 
 @app.route('/test_solver')
@@ -637,8 +637,8 @@ def process_input_image2(message, media_url=None):
             if entity[ENTITY] == 'url':
                 media_url = get_context(message, PUZZLE_INPUT)[entity['location'][0]:entity['location'][1]]
                 break
+    add_log_entry('Retreiving input image \'%s\'.' % media_url)
     if media_url is not None:
-        add_log_entry('Retreiving input image \'%s\'.' % media_url)
         response = requests.get(media_url)
         if response.status_code == 200:
             results = response.content
