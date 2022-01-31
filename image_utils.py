@@ -5,6 +5,7 @@ import pytesseract
 import time
 from threading import Thread
 import threading
+import add_log_entry
 
 DIGITAL_PIC = 'digital_pic'
 SCREEN_CAP = 'screen_cap'
@@ -14,16 +15,12 @@ Main routine to process the matrix_image and extract the sudoku matrix from it
 """
 
 
-def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=None, logging=True):
-
-    def log(message):
-        if logging:
-            print(message)
+def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=None, flask_app=None):
 
     # This routine forks a bunch of threads to process in parallel various combinations of
     # blurring and b/w thresholds to attempt to identify digits in the matrix cells
     def do_image_processing(image, input_matrix, x_y_xoords, lines, done_event):
-        x_coords, y_coords, input_image_lines = get_cell_boundaries(image, logging=logging)
+        x_coords, y_coords, input_image_lines = get_cell_boundaries(image, flask_app=flask_app)
         if image_type == SCREEN_CAP:
             # These are the combinations of image blur and threshold that seem to do best at
             # OCR on the numbers in the cells. This is based on image type
@@ -48,7 +45,7 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
             th = Thread(target=process_image,
                         args=(image, values['blur'], values['threshold'],
                               x_coords, y_coords, input_matrix, tesseract_config,
-                              done_event, logging))
+                              done_event, flask_app))
             th.start()
             threads.append(th)
         for th in threads:
@@ -64,22 +61,22 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
             if im_done_event.is_set():
                 break
             time.sleep(time_interval)
-            log("Max timer - %s seconds elapsed" % (time_interval * (i + 1)))
+            add_log_entry.log("Max timer - %s seconds elapsed" % (time_interval * (i + 1)), flask_app)
         if im_done_event.is_set() is False:
             im_done_event.set()
-            log("Max processing time exceeded.")
+            add_log_entry.log("Max processing time exceeded.", flask_app)
         else:
-            log("Cancelling max wait time processing.")
+            add_log_entry.log("Cancelling max wait time processing.", flask_app)
         return
 
     start_time = time.time()
-    log('Start Time: %.2f' % start_time)
+    add_log_entry.log('Start Time: %.2f' % start_time, flask_app)
 
     if image_type is None:
-        image_type = get_image_type(matrix_image, logging=logging)
+        image_type = get_image_type(matrix_image, flask_app=flask_app)
 
     if tesseract_config is None:
-        tesseract_config = get_tesseract_config_based_on_image_type(image_type)
+        tesseract_config = get_tesseract_config_based_on_image_type(image_type, flask_app=flask_app)
 
     input_matrix = np.zeros((9, 9), int)
     coordinates = [0, 0]
@@ -99,7 +96,7 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
     # Continue processing when one of the image processing or the max time internals finishes.
     done_event.wait()
 
-    log('End Time: %.2f' % (time.time() - start_time))
+    add_log_entry.log('End Time: %.2f' % (time.time() - start_time), flask_app)
 
     image_with_ocr = generate_image_with_input(matrix_image, coordinates[0], coordinates[1], input_matrix)
     purple = (200, 0, 200)
@@ -111,17 +108,14 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
 Routine to get image type based on characteristics of the digital image
 """
 
-def get_image_type(image, logging=True):
+def get_image_type(image, flask_app=None):
 
-    def log(message):
-        if logging:
-            print(message)
     color_dist = np.histogram(image, bins=256)
     std_dev = np.std(color_dist[0])
     # Multiplying by 1000 below to make the number more readable
     ratio_std_to_image_size = std_dev * 1000 / (image.shape[0] * image.shape[1])
-    log('Image Size: %s. Ratio of std color counts to size: %.2f.' %
-                 ((image.shape[0] * image.shape[1]), ratio_std_to_image_size))
+    add_log_entry.log('Image Size: %s. Ratio of std color counts to size: %.2f.' %
+                 ((image.shape[0] * image.shape[1]), ratio_std_to_image_size), flask_app)
     if ratio_std_to_image_size < 10:
         # If this ration is < 10, it means that the greyscale color counts are more uniformly distributed,
         # which is characteristic of a digital photo.
@@ -130,7 +124,7 @@ def get_image_type(image, logging=True):
         # Else if the value >= 10 it means the greyscale color counts are less evenly distributes
         # (more monochromatic) meaning image is more characteristic of a screen captiure
         image_type = SCREEN_CAP
-    log('Image type: %s' % image_type)
+    add_log_entry.log('Image type: %s' % image_type, flask_app)
     return image_type
 
 """
@@ -139,28 +133,24 @@ input image.
 
 Confirm with /notebooks/test_ocr
 """
-def get_tesseract_config_based_on_image_type(image_type):
+def get_tesseract_config_based_on_image_type(image_type, flask_app=None):
     if image_type == DIGITAL_PIC:
         tesseract_config = '--psm 10 --oem 1 -l eng -c tessedit_char_whitelist=123456789 --tessdata-dir ./tessdata/4.00_Sept_2017'
 
     else:
         tesseract_config = '--psm 10 --oem 0 -l eng -c tessedit_char_whitelist=123456789 --tessdata-dir ./tessdata/4.00_Nov_2016'
 
-    print('Tesseract config: %s' % tesseract_config)
+    add_log_entry.log('Tesseract config: %s' % tesseract_config, flask_app=flask_app)
     return tesseract_config
 
 """
 Routine to process and image with a specific set of parameters and return
 an input matrix and other analyses.
 """
-def process_image(image, blur, threshold, x_s, y_s, input_matrix, tesseract_config, done_event, logging=True):
-
-    def log(message):
-        if logging:
-            print(message)
+def process_image(image, blur, threshold, x_s, y_s, input_matrix, tesseract_config, done_event, flask_app=None):
 
     start = time.time()
-    log("Starting %s - blur: %s, threshold: %s" % (threading.get_ident(), blur, threshold))
+    add_log_entry.log("Starting %s - blur: %s, threshold: %s" % (threading.get_ident(), blur, threshold), flask_app)
     # blur the image
     blurred_image = cv2.medianBlur(image, blur)
 
@@ -195,8 +185,8 @@ def process_image(image, blur, threshold, x_s, y_s, input_matrix, tesseract_conf
                         # models. So, just going with the whitelist and adding code for when it is ignored.
                         digit_str = pytesseract.image_to_string(untrimmed_original_image, config=tesseract_config)
                         digit_str = digit_str.strip()
-                        log(' %s - Row: %s, Column %s, Density %.2f: \'%s\'' %
-                                     (threading.get_ident(), row + 1, column + 1, image_density, digit_str))
+                        add_log_entry.log(' %s - Row: %s, Column %s, Density %.2f: \'%s\'' %
+                                     (threading.get_ident(), row + 1, column + 1, image_density, digit_str), flask_app)
                         if digit_str.isdigit() and len(digit_str) == 1:
                             number = int(digit_str)
                             input_matrix[row][column] = number
@@ -210,11 +200,11 @@ def process_image(image, blur, threshold, x_s, y_s, input_matrix, tesseract_conf
 
     elapsed = time.time() - start
     if done_event.is_set() is False:
-        log("Ending %s - blur: %s, threshold: %s. Elapsed time: %.2f" %
-                 (threading.get_ident(), blur, threshold, elapsed))
+        add_log_entry.log("Ending %s - blur: %s, threshold: %s. Elapsed time: %.2f" %
+                 (threading.get_ident(), blur, threshold, elapsed), flask_app)
     else:
-        log("Time out: %s - blur: %s, threshold: %s. Elapsed time: %.2f" %
-                     (threading.get_ident(), blur, threshold, elapsed))
+        add_log_entry.log("Time out: %s - blur: %s, threshold: %s. Elapsed time: %.2f" %
+                     (threading.get_ident(), blur, threshold, elapsed), flask_app)
     return
 
 """
@@ -235,14 +225,10 @@ the digits
 """
 
 
-def get_cell_boundaries(image, logging=True):
-
-    def log(message):
-        if logging:
-            print(message)
+def get_cell_boundaries(image, flask_app=None):
 
     # Find all the lines in the matrix_image
-    horizontal_lines, vertical_lines = find_lines(image, logging=logging)
+    horizontal_lines, vertical_lines = find_lines(image, flask_app=flask_app)
 
     def horizontal_sort_func(i):
         return (min(i[0][1], i[0][3]))
@@ -298,8 +284,8 @@ def get_cell_boundaries(image, logging=True):
         # widths that caused valid rows/columns to be excluded. Trying 10 now.
         histogram_size = 10
         widths_histogram = np.histogram(coord_deltas, bins=histogram_size)
-        log('Coordinate widths histogram for refactoring:')
-        log(widths_histogram)
+        add_log_entry.log('Coordinate widths histogram for refactoring:', flask_app)
+        add_log_entry.log(widths_histogram, flask_app)
 
         shape = image.shape
         min_dimension = min(shape[0], shape[1])
@@ -327,7 +313,7 @@ def get_cell_boundaries(image, logging=True):
         # prevent the calculations from resulting in something slightly out of the range
         min_width = min_width * .9
         max_width = max_width * 1.1
-        log('Min width: %s, Max width: %s' % (min_width, max_width))
+        add_log_entry.log('Min width: %s, Max width: %s' % (min_width, max_width), flask_app)
 
         # start by collecting the entries of the desired size and computing the average line width
         line_width_total = 0
@@ -449,26 +435,26 @@ def get_cell_boundaries(image, logging=True):
             new_coord_delta_avg = np.average(new_coord_deltas)
             while len(new_coords) > 9:
                 if abs(abs(new_coords[0][0] - new_coords[0][1]) - new_coord_delta_avg) > abs(abs(new_coords[len(new_coords)-1][0] - new_coords[len(new_coords)-1][1]) - new_coord_delta_avg):
-                    log("Removing extra coord 0.")
+                    add_log_entry.log("Removing extra coord 0.", flask_app)
                     new_coords.pop(0)
 
                 else:
-                    log("Removing extra coord %s." % (len(new_coords) - 1) )
+                    add_log_entry.log("Removing extra coord %s." % (len(new_coords) - 1), flask_app)
                     new_coords.pop(len(new_coords)-1)
 
         return new_coords
 
-    log('x coords before refactoring: %s' % x_coords)
-    log('y coords before refactoring: %s' % y_coords)
+    add_log_entry.log('x coords before refactoring: %s' % x_coords, flask_app)
+    add_log_entry.log('y coords before refactoring: %s' % y_coords, flask_app)
 
-    log("Refactor y coordinates")
+    add_log_entry.log("Refactor y coordinates", flask_app)
     y_coords = refactor_coords(y_coords, y_coord_deltas)
 
-    log("Refactor x coordinates")
+    add_log_entry.log("Refactor x coordinates", flask_app)
     x_coords = refactor_coords(x_coords, x_coord_deltas)
 
-    log('x coords after refactoring: %s' % x_coords)
-    log('y coords after refactoring: %s' % y_coords)
+    add_log_entry.log('x coords after refactoring: %s' % x_coords, flask_app)
+    add_log_entry.log('y coords after refactoring: %s' % y_coords, flask_app)
 
     return x_coords, y_coords, [vertical_lines, horizontal_lines]
 
@@ -493,11 +479,8 @@ horizontal lines (which are the actual vertical ones).
 """
 
 
-def find_lines(image, logging=True):
+def find_lines(image, flask_app=None):
 
-    def log(message):
-        if logging:
-            print(message)
     """
     Routine to separate out and return only the horizontal and vertical lines and a separate list of those
     lines rejected.
@@ -563,19 +546,19 @@ def find_lines(image, logging=True):
     max_line_gap = int(minimum_side / 100)
     threshold = int(minimum_side * 0.5)
 
-    log('\nImage width: %s' % image_width)
-    log('Image height: %s' % image_height)
-    log('Minimum side: %s' % minimum_side)
-    log('Minimum line length: %s' % min_line_length)
-    log('Max line gap: %s' % max_line_gap)
+    add_log_entry.log('\nImage width: %s' % image_width, flask_app)
+    add_log_entry.log('Image height: %s' % image_height, flask_app)
+    add_log_entry.log('Minimum side: %s' % minimum_side, flask_app)
+    add_log_entry.log('Minimum line length: %s' % min_line_length, flask_app)
+    add_log_entry.log('Max line gap: %s' % max_line_gap, flask_app)
 
     lines = cv2.HoughLinesP(inverted_image, 1, np.pi / 180, threshold=threshold, minLineLength=min_line_length,
                             maxLineGap=max_line_gap)
     horizontal_lines, vertical_lines, rejected_lines = separate_lines(lines)
-    log("\nThreshold: %s" % threshold)
-    log("Horizontal lines: %s" % len(horizontal_lines))
-    log("Vertical lines: %s" % len(vertical_lines))
-    log("Rejected lines: %s" % len(rejected_lines))
+    add_log_entry.log("\nThreshold: %s" % threshold, flask_app)
+    add_log_entry.log("Horizontal lines: %s" % len(horizontal_lines), flask_app)
+    add_log_entry.log("Vertical lines: %s" % len(vertical_lines), flask_app)
+    add_log_entry.log("Rejected lines: %s" % len(rejected_lines), flask_app)
     if not(enough_lines(horizontal_lines, vertical_lines)):
         # If this is a digital pic, finding lines is better is we blur it a little first.
         blurred_image = cv2.medianBlur(image, 15)
@@ -583,10 +566,10 @@ def find_lines(image, logging=True):
         lines = cv2.HoughLinesP(inverted_image, 1, np.pi / 180, threshold=threshold, minLineLength=min_line_length,
                                 maxLineGap=max_line_gap)
         horizontal_lines, vertical_lines, rejected_lines = separate_lines(lines)
-        log("\nThreshold: %s" % threshold)
-        log("Horizontal lines: %s" % len(horizontal_lines))
-        log("Vertical lines: %s" % len(vertical_lines))
-        log("Rejected lines: %s" % len(rejected_lines))
+        add_log_entry.log("\nThreshold: %s" % threshold, flask_app)
+        add_log_entry.log("Horizontal lines: %s" % len(horizontal_lines), flask_app)
+        add_log_entry.log("Vertical lines: %s" % len(vertical_lines), flask_app)
+        add_log_entry.log("Rejected lines: %s" % len(rejected_lines), flask_app)
 
     return horizontal_lines, vertical_lines
 

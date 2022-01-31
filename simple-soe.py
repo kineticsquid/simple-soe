@@ -7,18 +7,18 @@ import redis
 import traceback
 import random
 import requests
-import re
 import jwt
 import logging
 import cv2
 import uuid
 import numpy as np
-import image_utils
 import urllib.parse
 from datetime import datetime
 import time
 from threading import Thread, Event
 import resource
+import image_utils
+import add_log_entry
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -27,19 +27,19 @@ logging.basicConfig(level=logging.INFO)
 @app.before_request
 def do_something_whenever_a_request_comes_in():
     r = request
-    add_log_entry('>>>>>>>>>>>>>>>>>>>> %s %s' % (r.method, r.url))
+    add_log_entry.log('>>>>>>>>>>>>>>>>>>>> %s %s' % (r.method, r.url), flask_app=app)
     # headers = r.headers
     # if len(headers) > 0:
     #     add_log_entry("Request headers: \n%s" % headers)
     args = r.args
     if len(args) > 0:
-        add_log_entry("Request query parameters: \n%s" % args)
+        add_log_entry.log("Request query parameters: \n%s" % args, flask_app=app)
     # values = r.values
     # if len(values) > 0:
     #     add_log_entry("Request values: \n%s" % values)
     data = r.data
     if len(data) > 0:
-        add_log_entry("Data payload: \n%s" % data)
+        add_log_entry.log("Data payload: \n%s" % data, flask_app=app)
 
     auth = r.headers.get('authorization')
     if auth is not None:
@@ -53,9 +53,9 @@ def do_something_after_a_request_finishes(response):
 
 @app.errorhandler(Exception)
 def handle_bad_request(e):
-    add_log_entry('>>>>>>>>>>>>>>>>>>>> Error: ' + str(e))
-    add_log_entry(traceback.format_exc())
-    add_log_entry('Max memory used: %s' % resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    add_log_entry.log('>>>>>>>>>>>>>>>>>>>> Error: ' + str(e), flask_app=app)
+    add_log_entry.log(traceback.format_exc(), flask_app=app)
+    add_log_entry.log('Max memory used: %s' % resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, flask_app=app)
     return str(e)
 
 
@@ -157,17 +157,17 @@ def webhook():
     msg = json.loads(data)
     event = msg[EVENT][NAME]
     if event == MESSAGE_RECEIVED:
-        add_log_entry('>>>>>>>>>>>>>>>>>>>> Assistant pre-webhook invoked')
-        add_log_entry('Context before pre-webhook: %s' % get_context_from_redis(msg))
+        add_log_entry.log('>>>>>>>>>>>>>>>>>>>> Assistant pre-webhook invoked', flask_app=app)
+        add_log_entry.log('Context before pre-webhook: %s' % get_context_from_redis(msg), flask_app=app)
         msg = pre_process(msg)
-        add_log_entry('Context after pre-webhook: %s' % get_context_from_redis(msg))
+        add_log_entry.log('Context after pre-webhook: %s' % get_context_from_redis(msg), flask_app=app)
     elif event == MESSAGE_PROCESSED:
-        add_log_entry('>>>>>>>>>>>>>>>>>>>> Assistant post-webhook invoked')
-        add_log_entry('Context before post-webhook: %s' % get_context_from_redis(msg))
+        add_log_entry.log('>>>>>>>>>>>>>>>>>>>> Assistant post-webhook invoked', flask_app=app)
+        add_log_entry.log('Context before post-webhook: %s' % get_context_from_redis(msg), flask_app=app)
         msg = post_process(msg)
-        add_log_entry('Context after post-webhook: %s' % get_context_from_redis(msg))
-    add_log_entry('Webhook results:')
-    add_log_entry(msg)
+        add_log_entry.log('Context after post-webhook: %s' % get_context_from_redis(msg), flask_app=app)
+    add_log_entry.log('Webhook results:', flask_app=app)
+    add_log_entry.log(msg, flask_app=app)
     response = jsonify(msg)
     return response
 
@@ -212,7 +212,7 @@ def post_process(message):
     elif action == PROCESS_INPUT_IMAGE:
         process_input_image2(message)
     elif action == ECHO_INPUT:
-        provide_input_matrix(message)
+        provide_input_matrix(message, flask_app=app)
     elif action == SOLVE_PUZZLE:
         solve_puzzle(message)
     elif action == CHECK_STATUS:
@@ -430,7 +430,7 @@ def process_input(message):
             input_matrix.append((new_row))
 
         set_context(message, PUZZLE_INPUT_MATRIX, input_matrix)
-        provide_input_matrix(message)
+        provide_input_matrix(message, flask_app=app)
 
     return message
 
@@ -536,7 +536,7 @@ def process_input_image(message, media_url=None):
                             new_row.append(int(number))
                         matrix_as_list.append(new_row)
                     set_context(message, PUZZLE_INPUT_MATRIX, matrix_as_list)
-                    provide_input_matrix(message)
+                    provide_input_matrix(message, flask_app=app)
                     add_response_text(message, ['Is this the matrix you want me to solve?'])
         else:
             add_response_text(message,
@@ -564,17 +564,17 @@ def process_input_image2(message, media_url=None):
         else:
             input_puzzle_image = cv2.imdecode(image_bytearray, cv2.IMREAD_COLOR)
             height, width = bw_input_puzzle_image.shape
-            add_log_entry('!!!!!!!!!!!!! Input image dimensions: %s x %s.' % (height, width))
+            add_log_entry.log('!!!!!!!!!!!!! Input image dimensions: %s x %s.' % (height, width),flask_app=app)
             if height > MAX_IMAGE_HEIGHT:
                 reduction = int(np.log2(height / MAX_IMAGE_HEIGHT)) + 1
                 new_dim = (int(width / 2 ** reduction), int(height / 2 ** reduction))
                 resized_image = cv2.resize(bw_input_puzzle_image, new_dim)
                 height, width = resized_image.shape
-                add_log_entry("!!!!!!!!!!!!! Reduced input image by factor of %s. New dimensions: %s x %s." % (2**reduction, height, width))
+                add_log_entry.log("!!!!!!!!!!!!! Reduced input image by factor of %s. New dimensions: %s x %s." % (2**reduction, height, width), flask_app=app)
                 bw_input_puzzle_image = resized_image
 
             input_matrix, image_with_ocr, image_with_lines, coordinates = \
-                image_utils.extract_matrix_from_image(bw_input_puzzle_image)
+                image_utils.extract_matrix_from_image(bw_input_puzzle_image, flask_app=app)
 
             if input_matrix is None or len(input_matrix) != 9:
                 error_status = {
@@ -583,7 +583,7 @@ def process_input_image2(message, media_url=None):
                 }
                 runtime_cache.setex(job_id, REDIS_TTL, json.dumps(error_status))
             else:
-                add_log_entry('!!!!!!!!!!!!! finished image processing')
+                add_log_entry.log('!!!!!!!!!!!!! finished image processing', flask_app=app)
                 now = datetime.now()
                 ocr_image_filename = urllib.parse.quote('/ocr-input/%s.%s.png' % (get_context(message, INPUT_IMAGE_ID),
                                                                                   now.strftime('%H-%M-%S')))
@@ -637,31 +637,31 @@ def process_input_image2(message, media_url=None):
             if entity[ENTITY] == 'url':
                 media_url = get_context(message, PUZZLE_INPUT)[entity['location'][0]:entity['location'][1]]
                 break
-    add_log_entry('Retreiving input image \'%s\'.' % media_url)
+    add_log_entry.log('Retreiving input image \'%s\'.' % media_url, flask_app=app)
     if media_url is not None:
         response = requests.get(media_url)
         if response.status_code == 200:
-            add_log_entry('Successfully retrieved input image \'%s\'.' % media_url)
+            add_log_entry.log('Successfully retrieved input image \'%s\'.' % media_url, flask_app=app)
             results = response.content
             set_context(message, INPUT_IMAGE_ID,
                         '%s.%s' % (message[PAYLOAD][CONTEXT][GLOBAL][SESSION_ID], str(uuid.uuid1())[0:8]))
             set_context(message, PUZZLE_ASYNC_JOB_ID,
                         '/job/%s.json' % get_context(message, INPUT_IMAGE_ID))
-            add_log_entry('!!!!!!!!!!!!! starting image processing')
+            add_log_entry.log('!!!!!!!!!!!!! starting image processing', flask_app=app)
             th = Thread(target=async_image_processing, args=(results, get_context(message, PUZZLE_ASYNC_JOB_ID)))
             th.start()
             add_response_text(message,
                               ['This\'ll just take a moment. Ask me in a bit.'])
         else:
-            add_log_entry('%s error retreiving input image \'%s\'.' % (response.status_code, media_url))
+            add_log_entry.log('%s error retreiving input image \'%s\'.' % (response.status_code, media_url), flask_app=app)
             add_response_text(message,
-                              ['I\'m sorry. I had a problem understanding the matrix_image you sent.'])
+                              ['I\'m sorry. I had a problem understanding the matrix_image you sent - HTTP % error' % response.status_code])
     else:
         add_response_text(message,
                           ['I\'m sorry. I seem to have misplaced your matrix to solve.'])
     return message
 
-def provide_input_matrix(message):
+def provide_input_matrix(message, flask_app=None):
     input_matrix = get_context(message, PUZZLE_INPUT_MATRIX)
     if input_matrix is not None:
         input_image_id = get_context(message, INPUT_IMAGE_ID)
@@ -673,7 +673,7 @@ def provide_input_matrix(message):
         input_image_coordinates = get_context(message, PUZZLE_INPUT_IMAGE_COORDINATES)
         if input_image_url is None or input_image_coordinates is None:
             # This means input was not by means of an image or url of an image
-            output_image_url = generate_matrix_image(input_matrix, filename)
+            output_image_url = generate_matrix_image(input_matrix, filename, flask_app=flask_app)
         else:
             # Input came as a texted image or a url to an image
             input_image_bytes = runtime_cache.get(input_image_url)
@@ -681,7 +681,8 @@ def provide_input_matrix(message):
             input_image = cv2.imdecode(image_bytearray, cv2.IMREAD_COLOR)
 
             output_image_url = generate_matrix_image(input_matrix, filename, input_image=input_image,
-                                                     input_image_coordinates=input_image_coordinates)
+                                                     input_image_coordinates=input_image_coordinates,
+                                                     flask_app=flask_app)
         image_response = {'response_type': 'image', 'source': output_image_url}
         message[PAYLOAD][OUTPUT][GENERIC].append(image_response)
         add_response_text(message, ['Here\'s the image I have from you to solve.',
@@ -694,7 +695,8 @@ def provide_input_matrix(message):
     return message
 
 
-def generate_matrix_image(input_matrix, filename, input_image=None, input_image_coordinates=None, solution_matrix=None):
+def generate_matrix_image(input_matrix, filename, input_image=None,
+                          input_image_coordinates=None, solution_matrix=None, flask_app=None):
     if solution_matrix is None:
         if input_image is None:
             image = image_utils.generate_matrix_image(input_matrix)
@@ -715,8 +717,8 @@ def generate_matrix_image(input_matrix, filename, input_image=None, input_image_
                                                       show_coordinates=False)
     matrix_filename = urllib.parse.quote("/sudoku/%s" % filename)
     runtime_cache.setex(matrix_filename, REDIS_TTL, image)
-    print("Saving matrix_image %s. length: %s: %s" %
-          (matrix_filename, len(image), str(image[0:10])))
+    add_log_entry.log("Saving matrix_image %s. length: %s: %s" %
+          (matrix_filename, len(image), str(image[0:10])), flask_app=flask_app)
     matrix_image_url = '%sredis%s' % (request.host_url, matrix_filename)
     return matrix_image_url
 
@@ -838,7 +840,7 @@ def check_status(message):
             set_context(message, PUZZLE_INPUT_MATRIX, status_object[PUZZLE_INPUT_MATRIX])
             set_context(message, PUZZLE_INPUT_IMAGE_COORDINATES, status_object[PUZZLE_INPUT_IMAGE_COORDINATES])
             set_context(message, PUZZLE_INPUT_IMAGE_URL, status_object[PUZZLE_INPUT_IMAGE_URL])
-            provide_input_matrix(message)
+            provide_input_matrix(message, flask_app=app)
             set_response_text(message, ['Yes, I\'ve finished and I have a matrix.'])
         else:
             set_response_text(message, ['I\'m really confused.'])
@@ -891,14 +893,6 @@ def set_response_text(message, list_of_texts):
     for text in list_of_texts:
         message[PAYLOAD][OUTPUT][GENERIC].append({'response_type': 'text', 'text': text})
     return message
-
-
-def add_log_entry(comment, message=None):
-    if message is None:
-        app.logger.info(comment)
-    else:
-        log_message = json.dumps(message)
-        app.logger.info(comment + " " + log_message)
 
 
 def get_redis_context_key(message):
@@ -1029,8 +1023,8 @@ runtime_cache = redis.Redis(
 runtime_cache.set('/test/test', 'test_value')
 test_value = runtime_cache.delete('/test/test')
 
-print('Starting %s %s' % (sys.argv[0], app.name))
-print('Python: ' + sys.version)
+add_log_entry.log('Starting %s %s' % (sys.argv[0], app.name), flask_app=app)
+add_log_entry.log('Python: ' + sys.version, flask_app=app)
 try:
     build_file = open('static/build.txt')
     build_stamp = build_file.readlines()[0]
@@ -1038,7 +1032,7 @@ try:
 except FileNotFoundError:
     from datetime import date
     build_stamp = generate_build_stamp()
-print('Running build: %s' % build_stamp)
+add_log_entry.log('Running build: %s' % build_stamp, flask_app=app)
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
