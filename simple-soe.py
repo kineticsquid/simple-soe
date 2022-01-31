@@ -575,7 +575,8 @@ def process_input_image2(message, media_url=None):
 
             input_matrix, image_with_ocr, image_with_lines, coordinates = \
                 image_utils.extract_matrix_from_image(bw_input_puzzle_image, flask_app=app)
-
+            add_log_entry.log('!!!!!!!!!!!!! finished image processing', flask_app=app)
+            add_log_entry.log('Input matrix: %s' % input_matrix, flask_app=app)
             if input_matrix is None or len(input_matrix) != 9:
                 error_status = {
                     'status': 'error',
@@ -583,7 +584,6 @@ def process_input_image2(message, media_url=None):
                 }
                 runtime_cache.setex(job_id, REDIS_TTL, json.dumps(error_status))
             else:
-                add_log_entry.log('!!!!!!!!!!!!! finished image processing', flask_app=app)
                 now = datetime.now()
                 ocr_image_filename = urllib.parse.quote('/ocr-input/%s.%s.png' % (get_context(message, INPUT_IMAGE_ID),
                                                                                   now.strftime('%H-%M-%S')))

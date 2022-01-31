@@ -1,5 +1,6 @@
 #!/bin/bash
 
+docker pull kineticsquid/simple-soe:latest
 # Now run locally. Use "rm" to remove the container once it finishes
 docker run --rm -p 5020:5020 --env JWT_SECRET=${JWT_SECRET} \
   --env ASSISTANT_URL=${ASSISTANT_URL} \
