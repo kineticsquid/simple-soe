@@ -1,0 +1,19 @@
+<html>
+<head>
+  <base href="/">
+  <title>Sudoku Bot</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<h1>Test Images</h1>
+<ul>
+    {% for file in files %}
+    <li>
+        <a href="/test_image/{{file}}">
+            {{file}}
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+</body>
+</html>

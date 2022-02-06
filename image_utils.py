@@ -57,7 +57,8 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
     # This routine waits for a time interval
     def max_wait_time_processing(im_done_event):
         time_interval = 10
-        for i in range(12):
+        # Effectively a 2 minute limit
+        for i in range(24):
             if im_done_event.is_set():
                 break
             time.sleep(time_interval)

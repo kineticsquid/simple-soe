@@ -1,7 +1,7 @@
 import os
 import sys
 import json
-from flask import Flask, request, jsonify, render_template, Response, abort
+from flask import Flask, request, jsonify, render_template, Response, abort, send_from_directory
 from twilio.rest import Client
 import redis
 import traceback
@@ -63,19 +63,31 @@ def handle_bad_request(e):
 def index():
     return render_template('index.html')
 
-@app.route('/test_image')
-def test_image():
-    # Image URLs:
-    #     image_url = 'https://i.imgur.com/NnnZcYf.png'
-    #     image_url = 'https://i.imgur.com/HXzhPo4.jpg'
-    args = dict(request.args)
-    image_url = args.get('url', None)
-    if image_url is None:
-        image_url = 'https://i.imgur.com/NnnZcYf.png'
+
+@app.route('/image/<path:image_path>')
+def get_image(image_path):
+    if image_path is not None:
+        return send_from_directory('static/images', image_path)
+    else:
+        return abort(404)
+
+
+@app.route('/test_images')
+def test_images():
+    from os import listdir
+    test_image_names = [f for f in listdir('static/images')]
+    return render_template('test_images.html', files=test_image_names)
+
+
+
+@app.route('/test_image/<path:image_path>')
+def test_image(image_path):
+    base_url = request.host_url
+    image_url = '%simage/%s' % (base_url, image_path)
     message2 = {'payload': {'output': {'entities': [], 'generic':[]}, 'context': {'global': {'system': {'user_id': 'Test'}, 'session_id': 'test_session_id'}, 'skills': {'main skill': {'user_defined': {}}}}}}
     process_input_image2(message2, media_url=image_url)
 
-    return 'Test requested.'
+    return 'Test requested of image \'%s\'.' % image_path
 
 
 @app.route('/test_solver')
@@ -650,6 +662,7 @@ def process_input_image2(message, media_url=None):
             add_log_entry.log('!!!!!!!!!!!!! starting image processing', flask_app=app)
             th = Thread(target=async_image_processing, args=(results, get_context(message, PUZZLE_ASYNC_JOB_ID)))
             th.start()
+            add_log_entry.log('!!!!!!!!!!!!! image processing thread started', flask_app=app)
             add_response_text(message,
                               ['This\'ll just take a moment. Ask me in a bit.'])
         else:

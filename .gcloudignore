@@ -12,3 +12,4 @@
 .idea
 readme.md
 *.sh
+.ipynb_checkpoints
