@@ -560,19 +560,14 @@ def process_input_image(message, media_url=None):
 
 def process_input_image2(message, media_url=None):
 
-    def async_image_processing(results, job_id):
-        status = {"status": "processing"}
-        runtime_cache.setex(job_id, REDIS_TTL, json.dumps(status))
-
+    def process_image():
+        add_log_entry.log('!!!!!!!!!!!!! starting image processing', flask_app=app)
         image_bytearray = np.asarray(bytearray(results), dtype="uint8")
         bw_input_puzzle_image = cv2.imdecode(image_bytearray, cv2.IMREAD_GRAYSCALE)
         if bw_input_puzzle_image is None:
             # This means the file or page was not a valid image
-            error_status = {
-                'status': 'error',
-                'message': 'I\'m sorry, I don\'t recognize your input as an image. If it\'s a GIF, we don\'t do GIFs, they\'re for losers.'
-            }
-            runtime_cache.setex(job_id, REDIS_TTL, json.dumps(error_status))
+            add_response_text(message,
+                        ['I\'m sorry, I don\'t recognize your input as an image. If it\'s a GIF, we don\'t do GIFs, they\'re for losers.'])
         else:
             input_puzzle_image = cv2.imdecode(image_bytearray, cv2.IMREAD_COLOR)
             height, width = bw_input_puzzle_image.shape
@@ -590,11 +585,8 @@ def process_input_image2(message, media_url=None):
             add_log_entry.log('!!!!!!!!!!!!! finished image processing', flask_app=app)
             add_log_entry.log('Input matrix: %s' % input_matrix, flask_app=app)
             if input_matrix is None or len(input_matrix) != 9:
-                error_status = {
-                    'status': 'error',
-                    'message': 'I\'m sorry. I had a problem understanding the matrix_image you sent.'
-                }
-                runtime_cache.setex(job_id, REDIS_TTL, json.dumps(error_status))
+                add_response_text(message,
+                                  ['I\'m sorry. I had a problem understanding the matrix_image you sent.'])
             else:
                 now = datetime.now()
                 ocr_image_filename = urllib.parse.quote('/ocr-input/%s.%s.png' % (get_context(message, INPUT_IMAGE_ID),
@@ -637,13 +629,6 @@ def process_input_image2(message, media_url=None):
                     matrix_as_list.append(new_row)
                 set_context(message, PUZZLE_INPUT_MATRIX, matrix_as_list)
 
-                completion_status = {
-                    'status': 'finished',
-                    PUZZLE_INPUT_MATRIX: matrix_as_list,
-                    PUZZLE_INPUT_IMAGE_COORDINATES: int_coordinates,
-                    PUZZLE_INPUT_IMAGE_URL: input_image_filename
-                }
-                runtime_cache.setex(job_id, REDIS_TTL, json.dumps(completion_status))
     if media_url is None:
         for entity in message[PAYLOAD][OUTPUT][ENTITIES]:
             if entity[ENTITY] == 'url':
@@ -657,14 +642,8 @@ def process_input_image2(message, media_url=None):
             results = response.content
             set_context(message, INPUT_IMAGE_ID,
                         '%s.%s' % (message[PAYLOAD][CONTEXT][GLOBAL][SESSION_ID], str(uuid.uuid1())[0:8]))
-            set_context(message, PUZZLE_ASYNC_JOB_ID,
-                        '/job/%s.json' % get_context(message, INPUT_IMAGE_ID))
-            add_log_entry.log('!!!!!!!!!!!!! starting image processing', flask_app=app)
-            th = Thread(target=async_image_processing, args=(results, get_context(message, PUZZLE_ASYNC_JOB_ID)))
-            th.start()
-            add_log_entry.log('!!!!!!!!!!!!! image processing thread started', flask_app=app)
-            add_response_text(message,
-                              ['This\'ll just take a moment. Ask me in a bit.'])
+            process_image()
+
         else:
             add_log_entry.log('%s error retreiving input image \'%s\'.' % (response.status_code, media_url), flask_app=app)
             add_response_text(message,

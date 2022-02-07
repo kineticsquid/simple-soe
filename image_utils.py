@@ -19,7 +19,7 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
 
     # This routine forks a bunch of threads to process in parallel various combinations of
     # blurring and b/w thresholds to attempt to identify digits in the matrix cells
-    def do_image_processing(image, input_matrix, x_y_xoords, lines, done_event):
+    def do_image_processing(image, input_matrix, x_y_xoords, lines):
         x_coords, y_coords, input_image_lines = get_cell_boundaries(image, flask_app=flask_app)
         if image_type == SCREEN_CAP:
             # These are the combinations of image blur and threshold that seem to do best at
@@ -50,24 +50,6 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
             threads.append(th)
         for th in threads:
             th.join()
-        if done_event.is_set() is False:
-            done_event.set()
-        return
-
-    # This routine waits for a time interval
-    def max_wait_time_processing(im_done_event):
-        time_interval = 10
-        # Effectively a 2 minute limit
-        for i in range(24):
-            if im_done_event.is_set():
-                break
-            time.sleep(time_interval)
-            add_log_entry.log("Max timer - %s seconds elapsed" % (time_interval * (i + 1)), flask_app)
-        if im_done_event.is_set() is False:
-            im_done_event.set()
-            add_log_entry.log("Max processing time exceeded.", flask_app)
-        else:
-            add_log_entry.log("Cancelling max wait time processing.", flask_app)
         return
 
     start_time = time.time()
@@ -84,18 +66,7 @@ def extract_matrix_from_image(matrix_image, tesseract_config=None, image_type=No
     lines = [0, 0]
     done_event = threading.Event()
 
-    # Start a thread to process the images. Send it the done_event which it will signal when done.
-    image_thread = Thread(target=do_image_processing,
-                          args=(matrix_image, input_matrix, coordinates, lines, done_event))
-    image_thread.start()
-
-    # Start a thread to wait for the maximum time. Send it the done_event which it will signal when done.
-    time_out_thread = Thread(target=max_wait_time_processing,
-                             args=(done_event,))
-    time_out_thread.start()
-
-    # Continue processing when one of the image processing or the max time internals finishes.
-    done_event.wait()
+    do_image_processing(matrix_image, input_matrix, coordinates, lines)
 
     add_log_entry.log('End Time: %.2f' % (time.time() - start_time), flask_app)
 
