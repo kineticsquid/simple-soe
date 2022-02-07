@@ -1,6 +1,6 @@
 #!/bin/bash
 
-docker pull kineticsquid/simple-soe:latest
+docker pull kineticsquid/sudoku-bot:latest
 # Now run locally. Use "rm" to remove the container once it finishes
 docker run --rm -p 5020:5020 --env JWT_SECRET=${JWT_SECRET} \
   --env ASSISTANT_URL=${ASSISTANT_URL} \
@@ -13,7 +13,7 @@ docker run --rm -p 5020:5020 --env JWT_SECRET=${JWT_SECRET} \
   --env PORT=${PORT} \
   --env TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID} \
   --env TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN} \
-  kineticsquid/simple-soe:latest
+  kineticsquid/sudoku-bot:latest
 
 #docker run --rm -p 5005:5040 kineticsquid/simple-soe:latest
 

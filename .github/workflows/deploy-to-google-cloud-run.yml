@@ -15,7 +15,7 @@ jobs:
     name: Google Cloud Run Deploy for Simple-SOE
     runs-on: ubuntu-latest
     env:
-      DOCKER_HUB_IMAGE_NAME: kineticsquid/${{ secrets.GCP_APPLICATION }}
+      DOCKER_HUB_IMAGE_NAME: kineticsquid/sudoku-bot
 
     steps:
 
@@ -46,7 +46,7 @@ jobs:
         id: deploy
         uses: google-github-actions/deploy-cloudrun@main
         with:
-          service: ${{ secrets.GCP_APPLICATION }}
+          service: sudoku-bot
           project_id: ${{ secrets.GCP_PROJECT }}
           source: ./
           region: us-central1
