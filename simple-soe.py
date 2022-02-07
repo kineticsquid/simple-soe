@@ -643,6 +643,7 @@ def process_input_image2(message, media_url=None):
             set_context(message, INPUT_IMAGE_ID,
                         '%s.%s' % (message[PAYLOAD][CONTEXT][GLOBAL][SESSION_ID], str(uuid.uuid1())[0:8]))
             process_image()
+            provide_input_matrix(message, flask_app=app)
 
         else:
             add_log_entry.log('%s error retreiving input image \'%s\'.' % (response.status_code, media_url), flask_app=app)
