@@ -1,20 +1,19 @@
-FROM kineticsquid/simple-soe-base:latest
+# Using 4.1.0 explicitly because as of 6/15, 4.1.1 did not have required certs installed
+FROM kineticsquid/sudoku-bot-base:latest
 
 # Set the working directory to /app
 WORKDIR /app
 
-# Copy runtime files from the current directory into the container at /app
-ADD *.py /app/
+# copy the requirements file used for dependencies
+COPY requirements.txt .
 
-RUN mkdir /app/static
-ADD static/ /app/static/
-RUN mkdir /app/templates
-ADD templates/ /app/templates/
-RUN mkdir /app/tessdata
-ADD tessdata/ /app/tessdata/
-ADD tessdata/ /usr/share/tessdata/
-ADD static/favicon-96x96.png /app/static/
+# Install any needed packages specified in requirements.txt
+RUN pip install --trusted-host pypi.python.org -r requirements.txt
+
+# Copy the rest of the working directory contents into the container at /app
+COPY . .
+
 RUN date > /app/static/build.txt
 
 # Run app.py when the container launches
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 simple-soe:app
+ENTRYPOINT ["python", "app.py"]

@@ -10,6 +10,10 @@
 .git
 .gitignore
 .idea
-readme.md
+.dockerignore
+.vscode/
+__pycache__/
 *.sh
+*.md
+.DS_Store
 .ipynb_checkpoints
